@@ -6,14 +6,38 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="產線戰情室", layout="wide")
 st.title("🏭 產線動態儀表板")
 
+# 初始化選取狀態
+if 'selected' not in st.session_state:
+    st.session_state['selected'] = None
+
+# 確保 `前線門檻` 不會被當作可選取欄位（若先前意外被選中，清除選取）
+if st.session_state.get('selected') and st.session_state['selected'][1] == '前線門檻':
+    st.session_state['selected'] = None
+
 # --- 自訂樣式：縮小 +/- 按鈕、放大數字、highlight 樣式 ---
 st.markdown("""
 <style>
-.stButton>button {font-size:12px; padding:4px 8px;}
+/* 固定 +/- 按鈕為方形並置中符號，避免與左右欄位黏在一起 */
+.stButton>button {font-size:12px; padding:2px 6px; min-width:30px; height:28px; display:inline-block; box-sizing:border-box; white-space:nowrap}
+.stButton>button>span {line-height:28px; display:block; text-align:center}
 .big-num {font-size:22px; font-weight:700;}
+.stMarkdown p {margin:0; padding:0}
+.big-num {padding:2px 0}
+.stApp [data-testid="stVerticalBlock"] > div {padding:2px 0}
 .red-highlight {background:#ffd6d6; color:#a00; font-weight:700; padding:4px 6px; border-radius:4px; display:inline-block}
 .green-highlight {background:#e6ffed; color:#0a6; font-weight:700; padding:4px 6px; border-radius:4px; display:inline-block}
+.threshold-highlight {background:#e6f0ff; color:#024; font-weight:800; padding:6px 8px; border-radius:6px; display:inline-block}
 .muted-num {color: #666; font-weight:600;}
+
+/* 手機響應式：窄螢幕時把按鈕縮小，數字微調 */
+@media (max-width: 600px) {
+    .stButton>button { font-size:10px !important; padding:0 !important; min-width:22px !important; width:26px !important; height:24px !important; }
+    .stButton>button>span { line-height:24px !important; }
+    .big-num { font-size:18px !important; }
+    .red-highlight, .green-highlight { font-size:14px !important; padding:2px 4px !important; }
+    /* 讓欄位的數字在手機上換行顯示，避免擁擠 */
+    .stMarkdown p, .stMarkdown div { word-break: keep-all; }
+}
 </style>
 """, unsafe_allow_html=True)
 # --- 1. 連接 Google Sheets (當作資料庫) ---
@@ -80,40 +104,49 @@ for index, row in df.iterrows():
         # 重新整理頁面顯示最新狀態
         st.rerun()
 
-    # --- 欄位：組裝完 ---
+    def local_modify(idx, col_name, delta):
+        # 僅修改本地 DataFrame，等待使用者按下「更新數據」時寫回
+        new_val = max(0, df.at[idx, col_name] + delta)
+        df.at[idx, col_name] = new_val
+        # 立即反映 UI，但不寫回遠端
+        st.experimental_rerun()
+
+    # --- 欄位：組裝完（點選以選取） ---
     with cols[1]:
-        st.write(f"{row['組裝完']}")
-        c1, c2 = st.columns(2)
-        if c1.button("➕", key=f"as_p_{index}"): update_val(index, '組裝完', 1)
-        if c2.button("➖", key=f"as_m_{index}"): update_val(index, '組裝完', -1)
+        sel_key = f"sel_組裝完_{index}"
+        is_sel = st.session_state.get('selected') == (index, '組裝完')
+        label = f"🔘 {row['組裝完']}" if is_sel else f"{row['組裝完']}"
+        if st.button(label, key=sel_key):
+            st.session_state['selected'] = (index, '組裝完')
 
-    # --- 欄位：出貨完 ---
+    # --- 欄位：出貨完（點選以選取） ---
     with cols[2]:
-        st.write(f"{row['出貨完']}")
-        c1, c2 = st.columns(2)
-        if c1.button("➕", key=f"sh_p_{index}"): update_val(index, '出貨完', 1)
-        if c2.button("➖", key=f"sh_m_{index}"): update_val(index, '出貨完', -1)
+        sel_key = f"sel_出貨完_{index}"
+        is_sel = st.session_state.get('selected') == (index, '出貨完')
+        label = f"🔘 {row['出貨完']}" if is_sel else f"{row['出貨完']}"
+        if st.button(label, key=sel_key):
+            st.session_state['selected'] = (index, '出貨完')
 
-    # --- 欄位：前線門檻 ---
+    # --- 欄位：前線門檻（點選以選取） ---
     with cols[3]:
-        st.write(f"{row['前線門檻']}")
-        c1, c2 = st.columns(2)
-        if c1.button("➕", key=f"th_p_{index}"): update_val(index, '前線門檻', 1)
-        if c2.button("➖", key=f"th_m_{index}"): update_val(index, '前線門檻', -1)
+        # 永遠顯示帶顏色背景的門檻數字；不提供選取按鈕（門檻通常為固定參數）
+        st.markdown(f"<div class='threshold-highlight'>{row['前線門檻']}</div>", unsafe_allow_html=True)
 
-    # --- 欄位：前線收到 ---
+    # --- 欄位：前線收到（點選以選取） ---
     with cols[4]:
-        st.markdown(f"<div class='big-num'>{row['前線收到']}</div>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        if c1.button("➕", key=f"rc_p_{index}"): update_val(index, '前線收到', 1)
-        if c2.button("➖", key=f"rc_m_{index}"): update_val(index, '前線收到', -1)
+        sel_key = f"sel_前線收到_{index}"
+        is_sel = st.session_state.get('selected') == (index, '前線收到')
+        label = f"🔘 {row['前線收到']}" if is_sel else f"{row['前線收到']}"
+        if st.button(label, key=sel_key):
+            st.session_state['selected'] = (index, '前線收到')
 
-    # --- 欄位：完成 ---
+    # --- 欄位：完成（點選以選取） ---
     with cols[5]:
-        st.markdown(f"<div class='big-num'>{row['完成']}</div>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        if c1.button("➕", key=f"cm_p_{index}"): update_val(index, '完成', 1)
-        if c2.button("➖", key=f"cm_m_{index}"): update_val(index, '完成', -1)
+        sel_key = f"sel_完成_{index}"
+        is_sel = st.session_state.get('selected') == (index, '完成')
+        label = f"🔘 {row['完成']}" if is_sel else f"{row['完成']}"
+        if st.button(label, key=sel_key):
+            st.session_state['selected'] = (index, '完成')
 
     # --- 自動計算欄位 (唯讀) ---
     # 顯示缺：如果 >0 則 highlight 紅色背景，否則淡色
@@ -132,6 +165,34 @@ for index, row in df.iterrows():
     
     st.divider()
 
-# 手動刷新按鈕 (雖然按任何按鈕都會刷新，但有時候別人更新了你需要手動刷)
-if st.button("🔄 刷新即時數據"):
-    st.rerun()
+# 操作區：用戶先點選表格中的數字（會標示 🔘），再用下方按鈕調整數值
+st.divider()
+st.markdown("**操作區：選取一個欄位後，使用下方的按鈕修改（按 +/- 會立即寫回遠端）。按下「刷新數據」可重新載入 Google Sheets 的最新資料。**")
+g_sel, g_minus, g_plus, g_refresh = st.columns([4,1,1,1])
+sel = st.session_state.get('selected')
+with g_sel:
+    if sel:
+        r, c = sel
+        st.markdown(f"**修改中項目：** {df.at[r, '產品']} — **{c}** = **{df.at[r, c]}**")
+    else:
+        st.markdown("未選取任何欄位，請點表格中的數字以開始")
+with g_minus:
+    if st.button("➖", key="global_minus"):
+        if not sel:
+            st.warning("請先點選表格中的數字以選取欄位")
+        else:
+            # 直接寫回遠端
+            update_val(sel[0], sel[1], -1)
+with g_plus:
+    if st.button("➕", key="global_plus"):
+        if not sel:
+            st.warning("請先點選表格中的數字以選取欄位")
+        else:
+            # 直接寫回遠端
+            update_val(sel[0], sel[1], 1)
+with g_refresh:
+    if st.button("刷新數據", key="global_refresh"):
+        # 重新載入遠端資料（script 會從頭執行並呼叫 conn.read）
+        st.experimental_rerun()
+
+# （已移除重複的全域刷新按鈕，請使用上方的「刷新數據」）
